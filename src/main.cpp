@@ -1,4 +1,6 @@
-
+#define BLYNK_TEMPLATE_ID "TMPL6Pm-IUzTD"
+#define BLYNK_TEMPLATE_NAME "pH Monitor"
+#define BLYNK_AUTH_TOKEN "meS0d8foG8LVAnb6yL27xVXTZIh4Kx4x"
 
 #include <ESP8266WiFi.h>
 #include <BlynkSimpleEsp8266.h>
@@ -7,7 +9,9 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 
-
+// --- WiFi ---
+char ssid[] = "PUTRA_BZ";
+char pass[] = "71757175";
 
 // --- Pins ---
 #define SDA_PIN D2
@@ -32,6 +36,13 @@ float minPH = 6.0;
 float maxPH = 8.5;
 float minTempC = 20.0;
 float maxTempC = 25.0;
+
+// --- Buzzer state machine ---
+unsigned long buzzerStart = 0;
+unsigned long lastToggle = 0;
+bool buzzerActive = false;
+bool buzzerPhaseOn = false;
+
 
 // --- Functions ---
 float readPH(float adc) {
@@ -72,9 +83,40 @@ void LEDControl(float tempC) {
 }
 
 void buzzerControl(float phValue) {
-  if (phValue < minPH || phValue > maxPH) {
-    digitalWrite(BUZZER, HIGH);
-  } else {
+  bool unsafe = (phValue < minPH || phValue > maxPH);
+  unsigned long now = millis();
+
+  if (unsafe) {
+    // Start buzzer cycle if not active
+    if (!buzzerActive) {
+      buzzerActive = true;
+      buzzerStart = now;
+      lastToggle = now;
+      buzzerPhaseOn = true;
+      digitalWrite(BUZZER, HIGH);
+    }
+
+    // Active cycle for 6 seconds
+    if (now - buzzerStart <= 6000) {
+      // Toggle every 1 second
+      if (now - lastToggle >= 1000) {
+        buzzerPhaseOn = !buzzerPhaseOn;
+        digitalWrite(BUZZER, buzzerPhaseOn ? HIGH : LOW);
+        lastToggle = now;
+      }
+    }
+    // Completed 6 seconds → Cooldown 10 seconds
+    else if (now - buzzerStart <= 6000 + 10000) {
+      digitalWrite(BUZZER, LOW);  // off during cooldown
+    }
+    // Restart cycle after 16 seconds total (6 work + 10 rest)
+    else {
+      buzzerActive = false; 
+    }
+  } 
+  else {
+    // Safe → Completely reset
+    buzzerActive = false;
     digitalWrite(BUZZER, LOW);
   }
 }
